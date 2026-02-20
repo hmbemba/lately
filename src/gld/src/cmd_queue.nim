@@ -14,7 +14,7 @@ import
     ,rz
 
 import
-    ../../late_dev/queue as late_queue
+    ../../lately/queue as late_queue
     ,store_config
     ,types
 

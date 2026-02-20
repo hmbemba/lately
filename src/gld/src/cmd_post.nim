@@ -30,12 +30,12 @@ import
     ,termui
 
 import
-     ../../late_dev/posts as late_posts
-    ,../../late_dev/media as late_media
-    ,../../late_dev/accounts as late_accounts
-    ,../../late_dev/profiles as late_profiles
-    ,../../late_dev/queue as late_queue
-    ,../../late_dev/models
+     ../../lately/posts as late_posts
+    ,../../lately/media as late_media
+    ,../../lately/accounts as late_accounts
+    ,../../lately/profiles as late_profiles
+    ,../../lately/queue as late_queue
+    ,../../lately/models
     ,store_config
     ,store_uploads
     ,types

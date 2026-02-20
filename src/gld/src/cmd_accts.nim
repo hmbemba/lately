@@ -14,7 +14,7 @@ import
     ,rz
 
 import
-    ../../late_dev/accounts as late_accounts
+    ../../lately/accounts as late_accounts
     ,store_config
     ,types
 

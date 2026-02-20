@@ -15,7 +15,7 @@ import
     ,termui
 
 import
-    ../../late_dev / [
+    ../../lately / [
         profiles
         ,media
         ,posts
@@ -308,7 +308,7 @@ proc runSched*(args: seq[string]) =
 discard """
 This module depends on:
 - termui
-- late_dev SDK package
+- lately SDK package
 Compile:
 nim c -d:ssl -d:release -r src/gld.nim
 """

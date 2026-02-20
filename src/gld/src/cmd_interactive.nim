@@ -27,10 +27,10 @@ import
     ,termui
 
 import
-     ../../late_dev/accounts as late_accounts
-    ,../../late_dev/profiles as late_profiles
-    ,../../late_dev/posts as late_posts
-    ,../../late_dev/queue as late_queue
+     ../../lately/accounts as late_accounts
+    ,../../lately/profiles as late_profiles
+    ,../../lately/posts as late_posts
+    ,../../lately/queue as late_queue
     ,./store_config
     ,./store_uploads
     ,./types

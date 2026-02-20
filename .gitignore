@@ -5,3 +5,4 @@ commands.xsh
 ctx_cache/
 *.nims
 *.db
+finalOutput.md

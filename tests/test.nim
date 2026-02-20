@@ -14,7 +14,7 @@ import ic
     ,rz
 
 # Local Files
-import ../src/late_dev/[
+import ../src/lately/[
     accounts
     ,downloads
     ,media
