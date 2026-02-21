@@ -5,7 +5,7 @@ import
 
 
 type
-    GldConfig* = object
+    GldConfig       * = object
         apiKey      * : string
         profileId   * : Option[string]
 

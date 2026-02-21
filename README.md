@@ -95,7 +95,7 @@ when isMainModule:
 
   let res = waitFor listProfiles(api_key, includeOverLimit = true)
   if res.isErr:
-    quit(res.err, 1)
+    quit(it.err, 1)
 
   for p in res.val.profiles:
     echo p.name, "  id=", p.id
@@ -172,7 +172,7 @@ import lately/media
 
 let publicUrlRes = waitFor mediaUploadFile(api_key, "./my_image.jpg")
 if publicUrlRes.isErr:
-  quit(publicUrlRes.err, 1)
+  quit(it.err, 1)
 
 echo "publicUrl: ", publicUrlRes.val
 ```
@@ -205,7 +205,7 @@ let created = waitFor createPost(
 )
 
 if created.isErr:
-  quit(created.err, 1)
+  quit(it.err, 1)
 
 echo "postId: ", created.val.post.id
 ```
