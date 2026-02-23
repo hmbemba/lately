@@ -1,5 +1,5 @@
 # Package
-version       = "0.1.0"
+version       = "0.1.1" 
 author        = "hmbem"
 description   = "Nim SDK for the Late.dev API"
 license       = "MIT"
