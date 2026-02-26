@@ -61,14 +61,17 @@ proc add_q(
         url.add "?" & k & "=" & enc_q(v)
 
 
-proc downloadFileFromUrl(
+proc downloadFileFromUrl*(
     downloadUrl          : string
     ,outFilePath         : string
-) : Future[void] {.async.} =
+) : Future[rz.Rz[string]] {.async.} =
     ## Download a file from a URL to a local path
     var async_client = newAsyncHttpClient(userAgent = "curl/8.4.0", maxRedirects = 10)
     try:
         await async_client.downloadFile(downloadUrl, outFilePath)
+        return rz.ok(outFilePath)
+    except CatchableError as e:
+        return rz.err[string]("Download failed: " & $e.msg)
     finally:
         async_client.close()
 
@@ -170,12 +173,14 @@ proc youtubeDownloadTo*(
     try:
         let
             json_resp   = parseJson(resp.val)
-            downloadUrl = json_resp{"url"}.getStr()
+            downloadUrl = json_resp{"downloadUrl"}.getStr()
 
         if downloadUrl.len == 0:
             return rz.err[string] "No download URL in response"
 
-        await downloadFileFromUrl(downloadUrl, outFilePath)
+        let dlResult = await downloadFileFromUrl(downloadUrl, outFilePath)
+        dlResult.isErr:
+            return dlResult
         return rz.ok outFilePath
     except CatchableError as e:
         return rz.err[string] $e.msg
@@ -217,7 +222,9 @@ proc instagramDownloadRaw*(
 
 
 discard """
+
 https://docs.getlate.dev/tools/downloads
+
 GET /v1/tools/instagram/download
 """
 proc instagramDownload*(
@@ -254,12 +261,14 @@ proc instagramDownloadTo*(
     try:
         let
             json_resp   = parseJson(resp.val)
-            downloadUrl = json_resp{"url"}.getStr()
+            downloadUrl = json_resp{"downloadUrl"}.getStr()
 
         if downloadUrl.len == 0:
             return rz.err[string] "No download URL in response"
 
-        await downloadFileFromUrl(downloadUrl, outFilePath)
+        let dlResult = await downloadFileFromUrl(downloadUrl, outFilePath)
+        dlResult.isErr:
+            return dlResult
         return rz.ok outFilePath
     except CatchableError as e:
         return rz.err[string] $e.msg
@@ -350,12 +359,14 @@ proc tiktokDownloadTo*(
     try:
         let
             json_resp   = parseJson(resp.val)
-            downloadUrl = json_resp{"url"}.getStr()
+            downloadUrl = json_resp{"downloadUrl"}.getStr()
 
         if downloadUrl.len == 0:
             return rz.err[string] "No download URL in response"
 
-        await downloadFileFromUrl(downloadUrl, outFilePath)
+        let dlResult = await downloadFileFromUrl(downloadUrl, outFilePath)
+        dlResult.isErr:
+            return dlResult
         return rz.ok outFilePath
     except CatchableError as e:
         return rz.err[string] $e.msg
@@ -446,14 +457,14 @@ proc twitterDownloadTo*(
     try:
         let
             json_resp   = parseJson(resp.val)
-            downloadUrl = json_resp{"url"}.getStr()
-        
-        icb resp.val
+            downloadUrl = json_resp{"downloadUrl"}.getStr()
 
         if downloadUrl.len == 0:
             return rz.err[string] "No download URL in response"
 
-        await downloadFileFromUrl(downloadUrl, outFilePath)
+        let dlResult = await downloadFileFromUrl(downloadUrl, outFilePath)
+        dlResult.isErr:
+            return dlResult
         return rz.ok outFilePath
     except CatchableError as e:
         return rz.err[string] $e.msg
@@ -532,12 +543,14 @@ proc facebookDownloadTo*(
     try:
         let
             json_resp   = parseJson(resp.val)
-            downloadUrl = json_resp{"url"}.getStr()
+            downloadUrl = json_resp{"downloadUrl"}.getStr()
 
         if downloadUrl.len == 0:
             return rz.err[string] "No download URL in response"
 
-        await downloadFileFromUrl(downloadUrl, outFilePath)
+        let dlResult = await downloadFileFromUrl(downloadUrl, outFilePath)
+        dlResult.isErr:
+            return dlResult
         return rz.ok outFilePath
     except CatchableError as e:
         return rz.err[string] $e.msg
@@ -616,12 +629,14 @@ proc linkedinDownloadTo*(
     try:
         let
             json_resp   = parseJson(resp.val)
-            downloadUrl = json_resp{"url"}.getStr()
+            downloadUrl = json_resp{"downloadUrl"}.getStr()
 
         if downloadUrl.len == 0:
             return rz.err[string] "No download URL in response"
 
-        await downloadFileFromUrl(downloadUrl, outFilePath)
+        let dlResult = await downloadFileFromUrl(downloadUrl, outFilePath)
+        dlResult.isErr:
+            return dlResult
         return rz.ok outFilePath
     except CatchableError as e:
         return rz.err[string] $e.msg
@@ -700,12 +715,14 @@ proc blueskyDownloadTo*(
     try:
         let
             json_resp   = parseJson(resp.val)
-            downloadUrl = json_resp{"url"}.getStr()
+            downloadUrl = json_resp{"downloadUrl"}.getStr()
 
         if downloadUrl.len == 0:
             return rz.err[string] "No download URL in response"
 
-        await downloadFileFromUrl(downloadUrl, outFilePath)
+        let dlResult = await downloadFileFromUrl(downloadUrl, outFilePath)
+        dlResult.isErr:
+            return dlResult
         return rz.ok outFilePath
     except CatchableError as e:
         return rz.err[string] $e.msg

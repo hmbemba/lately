@@ -21,7 +21,11 @@ import
     ,./src/cmd_accts
     ,./src/cmd_queue
     ,./src/cmd_post
+    ,./src/cmd_download
     ,./src/cmd_interactive
+    ,./src/cmd_agent
+    ,./src/cmd_config
+    ,./src/cmd_ideas
 
 
 proc main() =
@@ -43,10 +47,18 @@ proc main() =
         runInteractive()
 
     # ─────────────────────────────────────────
+    # Agent (AI-powered natural language)
+    # ─────────────────────────────────────────
+    of "agent", "a", "ai":
+        runAgent(rest)
+
+    # ─────────────────────────────────────────
     # Core commands
     # ─────────────────────────────────────────
     of "init":
         runInit()
+    of "config", "cfg":
+        runConfig(rest)
     of "profiles", "profile":
         runProfiles(rest)
     of "accounts", "acct", "accts":
@@ -59,12 +71,18 @@ proc main() =
         runSched(rest)
     of "queue":
         runQueue(rest)
+    of "download", "dl":
+        runDownload(rest)
+    of "ideas", "idea":
+        runIdeas(rest)
 
     # ─────────────────────────────────────────
     # Posting commands
     # ─────────────────────────────────────────
     of "post", "p":
         runPost(rest)
+    of "thread":
+        runThread(rest)
 
     # Platform shortcuts
     of "x", "twitter", "tw":

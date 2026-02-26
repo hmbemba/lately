@@ -108,13 +108,115 @@ proc renameHook*(
 # Internal helpers
 # -----------------------------
 
-proc mkOptionalObj[T](obj:T): JsonNode = 
+# Forward declaration
+proc mkOptionalObj[T](obj:T): JsonNode {.gcsafe.}
+
+proc mkPlatformSpecificDataJson(psd: platformSpecificData): JsonNode {.gcsafe.} =
+    ## Custom serialization for platformSpecificData that omits nulls and the kind discriminator
+    result = newJObject()
+    
+    # Handle common optional fields
+    if psd.firstComment.isSome:
+        result["firstComment"] = % psd.firstComment.get
+    if psd.contentType.isSome:
+        result["contentType"] = % $psd.contentType.get
+    if psd.snapchatContentType.isSome:
+        result["snapchatContentType"] = % $psd.snapchatContentType.get
+    
+    # ✅ threadItems: emit whenever present (Twitter, Threads, Bluesky all use this)
+    # Note: threadItems only exists when kind is twitter or threads
+    case psd.kind
+    of twitter, threads:
+        if psd.threadItems.isSome:
+            var arr = newJArray()
+            for item in psd.threadItems.get:
+                var itemObj = newJObject()
+                itemObj["content"] = % item.content
+                if item.mediaItems.isSome:
+                    itemObj["mediaItems"] = % item.mediaItems.get
+                arr.add itemObj
+            result["threadItems"] = arr
+    else:
+        discard
+    
+    # Handle other variant-specific fields based on the kind
+    case psd.kind
+    of twitter, threads:
+        discard  # threadItems already handled above
+    of facebook:
+        if psd.pageId.isSome:
+            result["pageId"] = % psd.pageId.get
+    of instagram:
+        if psd.userTags.isSome:
+            result["userTags"] = % psd.userTags.get
+        if psd.shareToFeed.isSome:
+            result["shareToFeed"] = % psd.shareToFeed.get
+        if psd.collaborators.isSome:
+            result["collaborators"] = % psd.collaborators.get
+        if psd.trialParams.isSome:
+            result["trialParams"] = mkOptionalObj(psd.trialParams.get)
+        if psd.audioName.isSome:
+            result["audioName"] = % psd.audioName.get
+    of linkedin:
+        if psd.disableLinkPreview.isSome:
+            result["disableLinkPreview"] = % psd.disableLinkPreview.get
+        if psd.organizationUrn.isSome:
+            result["organizationUrn"] = % psd.organizationUrn.get
+        if psd.documentTitle.isSome:
+            result["documentTitle"] = % psd.documentTitle.get
+    of pinterest:
+        if psd.title.isSome:
+            result["title"] = % psd.title.get
+        if psd.boardId.isSome:
+            result["boardId"] = % psd.boardId.get
+        if psd.link.isSome:
+            result["link"] = % psd.link.get
+        if psd.coverImageUrl.isSome:
+            result["coverImageUrl"] = % psd.coverImageUrl.get
+        if psd.coverImageKeyFrameTime.isSome:
+            result["coverImageKeyFrameTime"] = % psd.coverImageKeyFrameTime.get
+    of youtube:
+        if psd.ytTitle.isSome:
+            result["ytTitle"] = % psd.ytTitle.get
+        if psd.visibility.isSome:
+            result["visibility"] = % $psd.visibility.get
+        if psd.tags.isSome:
+            result["tags"] = % psd.tags.get
+        if psd.containsSyntheticMedia.isSome:
+            result["containsSyntheticMedia"] = % psd.containsSyntheticMedia.get
+    of tiktok:
+        if psd.tiktokSettings.isSome:
+            result["tiktokSettings"] = mkOptionalObj(psd.tiktokSettings.get)
+    of google_business_profile:
+        if psd.callToAction.isSome:
+            result["callToAction"] = mkOptionalObj(psd.callToAction.get)
+    of telegram:
+        if psd.parseMode.isSome:
+            result["parseMode"] = % $psd.parseMode.get
+        if psd.disableWebPagePreview.isSome:
+            result["disableWebPagePreview"] = % psd.disableWebPagePreview.get
+        if psd.disableNotification.isSome:
+            result["disableNotification"] = % psd.disableNotification.get
+        if psd.protectContent.isSome:
+            result["protectContent"] = % psd.protectContent.get
+    of bluesky, snapchat, reddit:
+        discard  # No additional fields
+
+proc mkOptionalObj[T](obj:T): JsonNode {.gcsafe.} = 
+    ## Recursively serialize object, omitting None Option fields
     result = newJObject()
     for n,v in obj.fieldPairs:
         when v is Option:
             if v.isSome:
-                when v.get is enum:
+                when v.get is platformSpecificData:
+                    # Use custom serialization for platformSpecificData
+                    result[n] = mkPlatformSpecificDataJson(v.get)
+                elif v.get is enum:
                     result[n] = % $v.get
+                elif v.get is seq:
+                    result[n] = % v.get
+                elif v.get is object:
+                    result[n] = mkOptionalObj(v.get)
                 else:
                     result[n] = % v.get
         else:
@@ -433,6 +535,9 @@ proc createPostRawResp*(
 
     if queueId.isSome:
         body["queueId"] = % queueId.get
+
+    when defined(ic):
+        icb "late.posts.createPost.body", $body
 
     try:
         let resp = await async_client.request(
@@ -792,6 +897,5 @@ proc retryPost*(
         return err[post_write_resp] &"Error parsing response to object. \nResponse -> {req_body}\nParsing Error -> {it.err}"
 
     return rz.ok as_obj
-
 
 

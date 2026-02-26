@@ -7,6 +7,7 @@ import
         ,asyncdispatch
         ,mimetypes
         ,sequtils
+        ,times
     ]
 
 import
@@ -26,6 +27,7 @@ import
     ,paths
     ,./store_config
     ,./store_uploads
+    # ,./cmd_agent  # Temporarily disabled due to llmm version mismatch
     # ,cmd_accts
     # ,cmd_queue
 
@@ -150,6 +152,17 @@ proc runInit*() =
     echo "✅ Initialized."
     echo "Default profileId: " & conf.profileId.get
     echo "Config: " & configPath()
+
+    # Optional: Agent setup
+    echo ""
+    echo "🤖 Would you like to configure the AI Agent?"
+    echo "   The agent lets you use natural language to manage your social media."
+    echo "   Example: 'gld agent \"post a thread about AI to Twitter\"'"
+    echo ""
+
+    # Agent temporarily disabled due to llmm version mismatch
+    echo ""
+    echo "Agent setup temporarily disabled. You can configure it later."
 
 
 
@@ -294,9 +307,20 @@ proc runSched*(args: seq[string]) =
         return
 
     for p in posts:
-        let whenStr = if p.scheduledFor.isSome: p.scheduledFor.get else: "(no scheduledFor)"
-        let title   = if p.title.isSome: p.title.get else: "(no title)"
-        echo &"- {p.id}  {whenStr}  {title}"
+        # Parse UTC time and convert to local timezone in 12-hour format
+        let whenStr = if p.scheduledFor.isSome:
+            let utcTime = parse(p.scheduledFor.get, "yyyy-MM-dd'T'HH:mm:ss'.'fff'Z'", utc())
+            let localTime = utcTime.local()
+            localTime.format("MMM d, yyyy h:mm:ss tt")
+        else:
+            "(no scheduledFor)"
+        let title = if p.title.isSome and p.title.get.len > 0: p.title.get else: ""
+        
+        if title.len > 0:
+            echo &"- {p.id}  {whenStr}"
+            echo &"  title: {title}"
+        else:
+            echo &"- {p.id}  {whenStr}"
 
         if p.platforms.isSome and p.platforms.get.len > 0:
             let plats = p.platforms.get.mapIt(it.platform).join(", ")

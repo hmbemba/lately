@@ -31,12 +31,16 @@ import
     ,../../lately/profiles as late_profiles
     ,../../lately/posts as late_posts
     ,../../lately/queue as late_queue
+    ,../../tools/agent_config
     ,./store_config
     ,./store_uploads
     ,./types
     ,./cmd_post
     ,./cmd_queue
+    ,./cmd_download
     ,./cmd_accts
+    ,./cmd_ideas
+    ,./cmd_agent
     ,./cmds
     ,./help
 
@@ -46,12 +50,15 @@ import
 # ============================================
 
 const
+    ActionAgent         = "AI Agent (natural language)"
     ActionPost          = "Create a post"
     ActionQueue         = "Manage queue"
     ActionAccounts      = "View connected accounts"
+    ActionIdeas         = "Manage ideas"
     ActionProfiles      = "Switch / view profiles"
     ActionScheduled     = "View scheduled posts"
     ActionUploads       = "View uploaded media"
+    ActionDownload      = "Download media"
     ActionInit          = "Configure (gld init)"
     ActionHelp          = "Help"
     ActionQuit          = "Quit"
@@ -387,6 +394,147 @@ proc interactiveAccounts(conf: GldConfig) =
 
 
 # ============================================
+# Interactive Ideas Flow
+# ============================================
+
+const
+    IdeasList           = "List ideas"
+    IdeasAdd            = "Add new idea"
+    IdeasSearch         = "Search ideas"
+    IdeasShow           = "Show idea details"
+    IdeasDone           = "Mark idea as done"
+    IdeasArchive        = "Archive idea"
+    IdeasRandom         = "Random idea"
+    IdeasStats          = "View statistics"
+    IdeasTags           = "List tags"
+    IdeasBack           = "Back"
+
+proc interactiveIdeas*() =
+    ## Interactive menu for managing ideas
+    
+    let action = termuiSelect("Ideas actions:", @[
+        IdeasList
+        ,IdeasAdd
+        ,IdeasSearch
+        ,IdeasShow
+        ,IdeasDone
+        ,IdeasArchive
+        ,IdeasRandom
+        ,IdeasStats
+        ,IdeasTags
+        ,IdeasBack
+    ])
+    
+    case action
+    of IdeasList:
+        let status = termuiSelect("Show:", @[
+            "Active ideas"
+            ,"Done ideas"
+            ,"Archived ideas"
+            ,"All ideas"
+        ])
+        
+        var args: seq[string] = @[]
+        case status
+        of "Done ideas": args.add("--done")
+        of "Archived ideas": args.add("--archived")
+        of "All ideas": args.add("--all")
+        else: discard
+        
+        # Ask about starred filter
+        if termuiConfirm("Show only starred?"):
+            args.add("--starred")
+        
+        runIdeas(args)
+        
+    of IdeasAdd:
+        echo ""
+        echo "💡 Add a new idea"
+        echo ""
+        
+        let content = termuiAsk("Idea content:")
+        if content.strip.len == 0:
+            echo "❌ Content is required. Cancelled."
+            return
+        
+        var args = @["add", content]
+        
+        let link = termuiAsk("Link URL (optional):")
+        if link.strip.len > 0:
+            args.add("--link=" & link.strip)
+        
+        let notes = termuiAsk("Notes (optional):")
+        if notes.strip.len > 0:
+            args.add("--notes=" & notes.strip)
+        
+        let tags = termuiAsk("Tags, comma-separated (optional):")
+        if tags.strip.len > 0:
+            args.add("--tags=" & tags.strip)
+        
+        if termuiConfirm("Mark as starred?"):
+            args.add("--starred")
+        
+        let prioritySel = termuiSelect("Priority:", @[
+            "None (0)", "Low (1)", "Medium (2)", "High (3)"
+        ])
+        let priority = case prioritySel
+        of "Low (1)": "1"
+        of "Medium (2)": "2"
+        of "High (3)": "3"
+        else: "0"
+        if priority != "0":
+            args.add("--priority=" & priority)
+        
+        runIdeas(args)
+        
+    of IdeasSearch:
+        let query = termuiAsk("Search for:")
+        if query.strip.len == 0:
+            echo "❌ Search term is required."
+            return
+        runIdeas(@["search", query.strip])
+        
+    of IdeasShow:
+        let id = termuiAsk("Idea ID:")
+        if id.strip.len == 0:
+            echo "❌ ID is required."
+            return
+        runIdeas(@["show", id.strip])
+        
+    of IdeasDone:
+        let id = termuiAsk("Idea ID to mark as done:")
+        if id.strip.len == 0:
+            echo "❌ ID is required."
+            return
+        runIdeas(@["done", id.strip])
+        
+    of IdeasArchive:
+        let id = termuiAsk("Idea ID to archive:")
+        if id.strip.len == 0:
+            echo "❌ ID is required."
+            return
+        runIdeas(@["archive", id.strip])
+        
+    of IdeasRandom:
+        var args = @["random"]
+        let tag = termuiAsk("Filter by tag (optional):")
+        if tag.strip.len > 0:
+            args.add("--tag=" & tag.strip)
+        runIdeas(args)
+        
+    of IdeasStats:
+        runIdeas(@["stats"])
+        
+    of IdeasTags:
+        runIdeas(@["tags"])
+        
+    of IdeasBack:
+        return
+    else:
+        return
+
+
+# ============================================
 # Main Loop
 # ============================================
 
@@ -408,18 +556,35 @@ proc runInteractive*() =
 
     while running:
         let action = termuiSelect("What would you like to do?", @[
-            ActionPost
+            ActionAgent
+            ,ActionPost
             ,ActionQueue
             ,ActionAccounts
+            ,ActionIdeas
             ,ActionProfiles
             ,ActionScheduled
             ,ActionUploads
+            ,ActionDownload
             ,ActionInit
             ,ActionHelp
             ,ActionQuit
         ])
 
         case action
+        of ActionAgent:
+            try:
+                # Check if agent is configured, if not run init first
+                var agentConf = loadAgentConfig()
+                if not isAgentConfigured(agentConf):
+                    initAgentInteractive()
+                    # Check again after init (user may have cancelled)
+                    agentConf = loadAgentConfig()
+                    if not isAgentConfigured(agentConf):
+                        continue  # Return to menu
+                runAgentChat()
+            except CatchableError as e:
+                echo &"❌ {e.msg}"
+
         of ActionPost:
             try:
                 interactivePost(conf)
@@ -435,6 +600,12 @@ proc runInteractive*() =
         of ActionAccounts:
             try:
                 interactiveAccounts(conf)
+            except CatchableError as e:
+                echo &"❌ {e.msg}"
+
+        of ActionIdeas:
+            try:
+                interactiveIdeas()
             except CatchableError as e:
                 echo &"❌ {e.msg}"
 
@@ -476,6 +647,12 @@ proc runInteractive*() =
         of ActionUploads:
             try:
                 cmds.runUploads(@[])
+            except CatchableError as e:
+                echo &"❌ {e.msg}"
+
+        of ActionDownload:
+            try:
+                cmd_download.interactiveDownload(conf)
             except CatchableError as e:
                 echo &"❌ {e.msg}"
 

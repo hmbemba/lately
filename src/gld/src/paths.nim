@@ -23,3 +23,8 @@ proc configPath*() : string =
 
 proc uploadsPath*() : string =
     result = gldDir() / "gld.uploads.json"
+
+
+proc downloadsDir*() : string =
+    ## Default downloads directory (.gld/downloads)
+    result = dirExistsOrMk(gldDir() / "downloads")

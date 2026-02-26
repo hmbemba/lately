@@ -175,6 +175,15 @@ type
 # -----------------------------
 # jsony rename hooks (_id -> id)
 # -----------------------------
+    linkedin_organization* = object
+        urn                * : string                # urn:li:organization:123456
+        name               * : string
+        vanityName         * : Option[string]        # URL-friendly name
+        logoUrl            * : Option[string]        # Organization logo
+        localizedName      * : Option[string]        # Localized display name
+    
+    linkedin_organizations_resp* = object
+        organizations      * : seq[linkedin_organization]
 proc renameHook*(v: var account_profile_ref, fieldName: var string) =
     if fieldName == "_id": fieldName = "id"
 
@@ -560,5 +569,52 @@ proc accountHealth*(
 
     let as_obj = catch req_body.asObj(account_health_detail_resp):
         return rz.err[account_health_detail_resp] &"Error parsing response to object.\nResponse -> {req_body}\nParsing Error -> {it.err}"
+
+    return rz.ok as_obj
+
+
+
+# -----------------------------
+# LinkedIn Organizations
+# -----------------------------
+discard """
+https://docs.getlate.dev/linkedin-mentions#get-linkedin-organizations
+List LinkedIn organizations (company pages) that the connected account can post to.
+"""
+proc getLinkedInOrganizationsRaw*(
+    api_key              : string
+    ,accountId           : string
+) : Future[string] {.async.} =
+    ## Get LinkedIn organizations available to the account
+    let url = fmt"{base_endpoint()}/accounts/{accountId}/linkedin-organizations"
+
+    var async_client = newAsyncHttpClient(userAgent = "curl/8.4.0", maxRedirects = 5)
+    async_client.headers = mk_auth_headers(api_key = api_key)
+
+    try:
+        let
+            resp      = await async_client.request(url = url, httpMethod = HttpGet)
+            resp_body = await resp.body
+        return resp_body
+    finally:
+        async_client.close()
+
+
+discard """
+https://docs.getlate.dev/linkedin-mentions#get-linkedin-organizations
+"""
+proc getLinkedInOrganizations*(
+    api_key              : string
+    ,accountId           : string
+) : Future[rz.Rz[linkedin_organizations_resp]] {.async.} =
+    ## Get LinkedIn organizations available to the account (typed response)
+    var req_body : string
+    try:
+        req_body = await getLinkedInOrganizationsRaw(api_key = api_key, accountId = accountId)
+    except CatchableError as e:
+        return rz.err[linkedin_organizations_resp] $e.msg
+
+    let as_obj = catch req_body.asObj(linkedin_organizations_resp):
+        return rz.err[linkedin_organizations_resp] &"Error parsing response to object.\nResponse -> {req_body}\nParsing Error -> {it.err}"
 
     return rz.ok as_obj

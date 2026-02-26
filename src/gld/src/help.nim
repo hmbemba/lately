@@ -9,14 +9,25 @@ proc printHelp*() =
     echo "  content across all your social platforms from the terminal."
     echo ""
 
+    echo "  🤖 AGENT (AI-POWERED)"
+    termuiLabel("gld agent", "Natural language interface (interactive chat)")
+    termuiLabel("gld agent \"<cmd>\"", "Single-shot natural language command")
+    termuiLabel("gld agent --init", "Configure the AI agent")
+    termuiLabel("gld agent --status", "Show agent configuration")
+    echo ""
+
     echo "  🚀 CORE COMMANDS"
     termuiLabel("gld init", "Configure API key and default profile")
+    termuiLabel("gld config", "Configure download providers and settings")
     termuiLabel("gld post", "Create posts (Interactive or Flags)")
+    termuiLabel("gld thread", "Create X/Threads multi-tweet threads")
     termuiLabel("gld queue", "Manage posting schedules & slots")
     termuiLabel("gld accounts", "View connected platform health")
     termuiLabel("gld profiles", "Manage multiple brand profiles")
     termuiLabel("gld uploads", "View your media upload history")
     termuiLabel("gld sched", "List currently scheduled posts")
+    termuiLabel("gld download", "Download media from social platforms")
+    termuiLabel("gld ideas", "Capture and manage your ideas (local SQLite)")
     echo ""
 
     echo "  ⚡ PLATFORM SHORTCUTS"
@@ -32,23 +43,26 @@ proc printHelp*() =
 
     echo "  💡 USAGE EXAMPLES"
     echo ""
-    echo "  1. Interactive Post (Recommended)"
+    echo "  1. Agent Natural Language"
+    echo "     $ gld agent \"find clips from https://x.com/... for TikTok\""
+    echo ""
+    echo "  2. Interactive Post (Recommended)"
     echo "     $ gld post"
     echo "     > Prompts for text, media, and platforms."
     echo ""
-    echo "  2. Quick Update"
+    echo "  3. Quick Update"
     echo "     $ gld x \"Shipping new features today! 📦\""
     echo ""
-    echo "  3. Post with Media"
+    echo "  4. Post with Media"
     echo "     $ gld ig \"Office view\" --file ./photo.jpg"
     echo ""
-    echo "  4. Add to Queue (Auto-schedule)"
+    echo "  5. Add to Queue (Auto-schedule)"
     echo "     $ gld post \"Weekly tip...\" --queue --to x,li"
     echo ""
-    echo "  5. Schedule Specific Time"
+    echo "  6. Schedule Specific Time"
     echo "     $ gld post \"Launch time\" --schedule \"2025-01-01T12:00:00\""
     echo ""
-    echo "  6. Switch Profiles"
+    echo "  7. Switch Profiles"
     echo "     $ gld post --profile <my_alt_profile>"
     echo ""
 

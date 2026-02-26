@@ -22,6 +22,7 @@ import
         ,os
         ,mimetypes
         ,tables
+        ,json
     ]
 
 import
@@ -122,6 +123,11 @@ type
         hashtags        * : seq[string]
         rawMode         * : bool
         dryRun          * : bool
+        # LinkedIn-specific
+        linkedInOrgUrn  * : Option[string]    # urn:li:organization:123456
+        linkedInDocTitle* : Option[string]    # For document/PDF posts
+        disableLinkPreview* : Option[bool]    # Suppress URL preview
+        firstComment    * : Option[string]    # Auto-post first comment
 
     PostMode* = enum
         pmPublishNow
@@ -512,16 +518,24 @@ proc printPostHelp*() =
     echo "  --title <title>       Post title (for platforms that support it)"
     echo "  --tags <t1,t2>        Add tags"
     echo "  --hashtags <h1,h2>    Add hashtags"
+    echo "  --first-comment <txt> Auto-post first comment (best for links)"
+    echo "  --no-link-preview     Suppress URL preview card"
     echo "  --raw                 Print raw API response"
     echo "  --dry-run             Preview without posting"
     echo "  -h, --help            Show this help"
     echo ""
     echo "Examples:"
+    echo ""
+    echo "LinkedIn Options:"
+    echo "  --linkedin-org <urn>  Post to company page (e.g., urn:li:organization:123456)"
+    echo "  --linkedin-doc-title <title>  Title for PDF/carousel posts"
     echo "  gld x \"Just shipped a new feature! 🚀\""
     echo "  gld post \"Big announcement\" --to x,linkedin,threads"
     echo "  gld post \"Draft idea\" --draft --prof finsta"
     echo "  gld ig --file photo.jpg --text \"Check this out!\" --prof finsta"
     echo "  gld post \"Scheduled post\" --schedule \"2024-12-25T10:00:00Z\""
+    echo "  gld linkedin \"Report\" --file report.pdf --linkedin-doc-title \"2024 Report\""
+    echo "  gld linkedin \"Link in first comment\" --first-comment \"https://example.com\""
     echo ""
 
 
@@ -692,10 +706,20 @@ proc executePost*(
     var platforms: seq[platform]
     for plat in params.platforms:
         if accountMap.hasKey(plat):
-            platforms.add platform(
-                platform  : plat
-                ,accountId: accountMap[plat]
-            )
+            # For LinkedIn, use the helper with platform-specific data
+            if plat == "linkedin":
+                platforms.add pLinkedIn(
+                    accountId        = accountMap[plat]
+                    ,firstComment    = params.firstComment
+                    ,disableLinkPreview = params.disableLinkPreview
+                    ,organizationUrn  = params.linkedInOrgUrn
+                    ,documentTitle    = params.linkedInDocTitle
+                )
+            else:
+                platforms.add platform(
+                    platform  : plat
+                    ,accountId: accountMap[plat]
+                )
 
     if platforms.len == 0:
         return err[late_posts.post_write_resp]("No valid platform/account combinations found")
@@ -762,6 +786,11 @@ proc runPost*(args: seq[string]) =
         hashtagsArg  = pickArg(args, "--hashtags")
         fileArgs     = pickArgMulti(args, "--file")
         textArg      = pickArg(args, "--text")
+        # LinkedIn-specific flags
+        linkedInOrgArg = pickArg(args, "--linkedin-org")
+        linkedInDocTitleArg = pickArg(args, "--linkedin-doc-title")
+        disablePreviewArg = hasFlag(args, "--no-link-preview")
+        firstCommentArg = pickArg(args, "--first-comment")
 
     # Support both --prof and --profile
     let profileArg =
@@ -864,6 +893,10 @@ proc runPost*(args: seq[string]) =
         ,hashtags    : if hashtagsArg.isSome: hashtagsArg.get.split(",").mapIt(it.strip) else: @[]
         ,rawMode     : rawMode
         ,dryRun      : dryRun
+        ,linkedInOrgUrn  : linkedInOrgArg
+        ,linkedInDocTitle: linkedInDocTitleArg
+        ,disableLinkPreview: some(disablePreviewArg)
+        ,firstComment: firstCommentArg
     )
 
     # Confirm before posting
@@ -1158,3 +1191,399 @@ proc runBluesky*(args: seq[string]) =
 
 proc runYouTube*(args: seq[string]) =
     runPlatformPost("youtube", args)
+
+
+# --------------------------------------------
+# Thread (multi-tweet) commands
+# --------------------------------------------
+
+proc printThreadHelp*() =
+    echo "gld thread - Create a thread (multi-tweet) on X or Threads"
+    echo ""
+    echo "Usage:"
+    echo "  gld thread --platform x                # Interactive mode"
+    echo "  gld thread --platform threads          # Post to Threads"
+    echo "  gld thread --platform x --file items.json   # Load from JSON"
+    echo ""
+    echo "Options:"
+    echo "  --platform <x|threads>  Target platform (required)"
+    echo "  --file <path>           JSON file with thread items (see format below)"
+    echo "  --comment <text>        Optional first comment after the thread"
+    echo "  --schedule <time>       Schedule for later (ISO 8601)"
+    echo "  --draft                 Save as draft instead of publishing"
+    echo "  --queue                 Add to posting queue"
+    echo "  --prof <name|id>        Profile name or ID to post from"
+    echo "  --raw                   Print raw API response"
+    echo "  --dry-run               Preview without posting"
+    echo "  -h, --help              Show this help"
+    echo ""
+    echo "JSON Format:"
+    echo "  ["
+    echo "    {\"content\": \"1/ First tweet in the thread\"},"
+    echo "    {\"content\": \"2/ Second tweet with image\", \"mediaFiles\": [\"/path/to/image.jpg\"]},"
+    echo "    {\"content\": \"3/ Final tweet!\"}"
+    echo "  ]"
+    echo ""
+    echo "Interactive Mode:"
+    echo "  Without --file, you'll be prompted to enter each tweet in the thread."
+    echo "  Enter an empty line to finish adding items."
+    echo ""
+    echo "Examples:"
+    echo "  gld thread --platform x --file thread.json"
+    echo "  gld thread --platform x --schedule 2024-12-25T10:00:00Z"
+    echo "  gld thread --platform threads --draft"
+    echo ""
+
+type
+    ThreadItemInput* = object
+        content*: string
+        mediaFiles*: seq[string]
+
+proc parseThreadFromJson*(jsonPath: string): seq[ThreadItemInput] =
+    ## Parse thread items from a JSON file
+    if not fileExists(jsonPath):
+        raise newException(ValueError, "File not found: " & jsonPath)
+    
+    let jsonStr = readFile(jsonPath)
+    let data = parseJson(jsonStr)
+    
+    if data.kind != JArray:
+        raise newException(ValueError, "Expected JSON array of thread items")
+    
+    for item in data:
+        if not item.hasKey("content"):
+            raise newException(ValueError, "Each thread item must have 'content'")
+        
+        var mediaFiles: seq[string]
+        if item.hasKey("mediaFiles"):
+            for m in item["mediaFiles"]:
+                mediaFiles.add m.getStr
+        
+        result.add ThreadItemInput(
+            content: item["content"].getStr
+            ,mediaFiles: mediaFiles
+        )
+
+proc collectThreadItemsInteractive*(): seq[ThreadItemInput] =
+    ## Collect thread items interactively from the user
+    echo ""
+    echo "🧵 Creating a thread"
+    echo "Enter each tweet/post. Leave empty when done."
+    echo ""
+    
+    var idx = 1
+    while true:
+        echo &"--- Item {idx} ---"
+        let content = termuiAsk("Content:").strip
+        
+        if content.len == 0:
+            break
+        
+        var mediaFiles: seq[string]
+        let mediaAns = termuiAsk("Media files (comma-separated, optional):").strip
+        if mediaAns.len > 0:
+            mediaFiles = parseUserFileList(mediaAns)
+            # Validate files exist
+            for f in mediaFiles:
+                if not fileExists(f):
+                    raise newException(ValueError, "File not found: " & f)
+        
+        result.add ThreadItemInput(
+            content: content
+            ,mediaFiles: mediaFiles
+        )
+        
+        idx += 1
+        echo ""
+    
+    if result.len < 2:
+        raise newException(ValueError, "A thread requires at least 2 items")
+
+proc confirmThread*(
+    platform: string
+    ,items: seq[ThreadItemInput]
+    ,firstComment: Option[string]
+    ,mode: PostMode
+    ,scheduledFor: Option[string]
+): bool =
+    ## Show thread preview and confirm
+    let displayName = PlatformDisplayNames.getOrDefault(platform, platform)
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🧵 Thread Preview"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo &"📱 Platform: {displayName}"
+    echo &"📝 Items: {items.len} tweets/posts"
+    echo ""
+    
+    for i, item in items:
+        echo &"  [{i+1}/{items.len}]"
+        let maxWidth = 56
+        var remaining = item.content
+        while remaining.len > maxWidth:
+            let breakPoint = remaining[0..<maxWidth].rfind(' ')
+            let bp = if breakPoint > 0: breakPoint else: maxWidth
+            echo "      " & remaining[0..<bp]
+            remaining = remaining[bp..^1].strip
+        if remaining.len > 0:
+            echo "      " & remaining
+        if item.mediaFiles.len > 0:
+            echo &"      📎 {item.mediaFiles.len} media file(s)"
+        echo ""
+    
+    if firstComment.isSome:
+        echo &"💬 First comment: {firstComment.get}"
+    
+    case mode
+    of pmDraft:
+        echo "📋 Mode: Draft"
+    of pmSchedule:
+        echo &"⏰ Mode: Scheduled ({scheduledFor.get})"
+    of pmQueue:
+        echo "🗂️  Mode: Queue"
+    of pmPublishNow:
+        echo "🚀 Mode: Publish now"
+    
+    # Character limit warnings
+    if platform == "twitter" or platform == "x":
+        for i, item in items:
+            if item.content.len > 280:
+                echo &"⚠️  Warning: Item {i+1} exceeds Twitter limit ({item.content.len}/280 chars)"
+    
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    return termuiConfirm(&"Confirm {confirmVerb(mode)} thread?")
+
+proc executeThread*(
+    apiKey: string
+    ,profileId: Option[string]
+    ,platform: string
+    ,items: seq[ThreadItemInput]
+    ,firstComment: Option[string]
+    ,mode: PostMode
+    ,scheduledFor: Option[string]
+): Future[Rz[late_posts.post_write_resp]] {.async.} =
+    ## Execute thread creation
+    
+    # Get connected accounts
+    let acctRes = await getConnectedPlatforms(apiKey, profileId)
+    acctRes.isErr:
+        return err[late_posts.post_write_resp](acctRes.err)
+    
+    # Find matching account
+    var accountId = ""
+    for a in acctRes.val:
+        if a.platform == platform:
+            accountId = a.accountId
+            break
+    
+    if accountId.len == 0:
+        let displayName = PlatformDisplayNames.getOrDefault(platform, platform)
+        return err[late_posts.post_write_resp](&"No connected {displayName} account found")
+    
+    # Upload media for each thread item
+    var threadItems: seq[threadItem]
+    var totalMedia = 0
+    
+    if items.anyIt(it.mediaFiles.len > 0):
+        let spinner = termuiSpinner("Uploading media...")
+        
+        for item in items:
+            var mediaItems: seq[mediaItem]
+            
+            for filePath in item.mediaFiles:
+                let uploadRes = await uploadMediaFile(apiKey, filePath)
+                uploadRes.isErr:
+                    spinner.complete()
+                    return err[late_posts.post_write_resp](uploadRes.err)
+                
+                let cType = guessContentType(filePath)
+                let mType =
+                    if isVideoFile(cType): mediaItemTypes.video
+                    elif isImageFile(cType): mediaItemTypes.image
+                    else: mediaItemTypes.image
+                
+                mediaItems.add mediaItem(
+                    url: uploadRes.val
+                    ,`type`: mType
+                )
+                totalMedia += 1
+            
+            threadItems.add threadItem(
+                content: item.content
+                ,mediaItems: if mediaItems.len > 0: some(mediaItems) else: none(seq[mediaItem])
+            )
+        
+        spinner.complete()
+        echo &"✅ Uploaded {totalMedia} file(s)"
+    else:
+        for item in items:
+            threadItems.add threadItem(
+                content: item.content
+                ,mediaItems: none(seq[mediaItem])
+            )
+    
+    # Build platform entry
+    let platformEntry =
+        if platform == "twitter":
+            pTwitterThread(accountId, threadItems, firstComment)
+        else:
+            pThreadsThread(accountId, threadItems, firstComment)
+    
+    # Determine publish flags
+    var
+        publishNow = none bool
+        isDraft    = none bool
+    
+    if mode == pmDraft:
+        isDraft = some true
+    elif mode == pmPublishNow:
+        publishNow = some true
+    
+    # Create the thread
+    let spinnerLabel =
+        case mode
+        of pmDraft:      "Saving thread draft..."
+        of pmSchedule:   "Scheduling thread..."
+        of pmQueue:      "Queueing thread..."
+        of pmPublishNow: "Publishing thread..."
+    
+    let spinner = termuiSpinner(spinnerLabel)
+    
+    let res = await late_posts.createPost(
+        api_key       = apiKey
+        ,content      = some(items[0].content)  # Use first item as top-level content
+        ,platforms    = @[platformEntry]
+        ,scheduledFor = scheduledFor
+        ,publishNow   = publishNow
+        ,isDraft      = isDraft
+    )
+    
+    spinner.complete()
+    return res
+
+proc runThread*(args: seq[string]) =
+    ## Create a thread (multi-tweet) on X or Threads
+    
+    if hasFlag(args, "--help") or hasFlag(args, "-h"):
+        printThreadHelp()
+        return
+    
+    let conf = loadConfig()
+    let apiKey = requireApiKey(conf)
+    
+    let
+        rawMode      = hasFlag(args, "--raw")
+        dryRun       = hasFlag(args, "--dry-run")
+        isDraft      = hasFlag(args, "--draft")
+        useQueue     = hasFlag(args, "--queue")
+        platformArg  = pickArg(args, "--platform")
+        fileArg      = pickArg(args, "--file")
+        commentArg   = pickArg(args, "--comment")
+        scheduleArg  = pickArg(args, "--schedule")
+        profileArg   =
+            if pickArg(args, "--prof").isSome: pickArg(args, "--prof")
+            elif pickArg(args, "--profile").isSome: pickArg(args, "--profile")
+            else: none string
+    
+    # Resolve profile
+    let profileRes = resolveProfileIdSync(apiKey, profileArg, conf.profileId)
+    profileRes.isErr:
+        echo &"❌ {profileRes.err}"
+        return
+    
+    let profileId = profileRes.val
+    
+    # Validate platform
+    if platformArg.isNone:
+        echo "❌ --platform is required (x or threads)"
+        printThreadHelp()
+        return
+    
+    let platform = normalizePlatform(platformArg.get)
+    if platform.isNone or platform.get notin ["twitter", "threads"]:
+        echo &"❌ Platform must be 'x' (twitter) or 'threads'"
+        return
+    
+    let plat = platform.get
+    
+    # Collect thread items
+    var items: seq[ThreadItemInput]
+    
+    if fileArg.isSome:
+        # Load from JSON file
+        try:
+            items = parseThreadFromJson(fileArg.get)
+        except CatchableError as e:
+            echo &"❌ Failed to parse thread file: {e.msg}"
+            return
+    else:
+        # Interactive mode
+        try:
+            items = collectThreadItemsInteractive()
+        except CatchableError as e:
+            echo &"❌ {e.msg}"
+            return
+    
+    if items.len < 2:
+        echo "❌ A thread requires at least 2 items. For single posts, use 'gld post'"
+        return
+    
+    let firstComment =
+        if commentArg.isSome and commentArg.get.len > 0: commentArg
+        else: none(string)
+    
+    let mode =
+        if isDraft: pmDraft
+        elif scheduleArg.isSome: pmSchedule
+        elif useQueue: pmQueue
+        else: pmPublishNow
+    
+    let scheduledFor = scheduleArg
+    
+    # Confirm before posting
+    if not dryRun:
+        let confirmed = confirmThread(plat, items, firstComment, mode, scheduledFor)
+        if not confirmed:
+            echo "Cancelled."
+            return
+    
+    if dryRun:
+        echo &"🔍 Dry run - would create {items.len}-item thread on {PlatformDisplayNames.getOrDefault(plat, plat)}"
+        return
+    
+    # Execute
+    let res = waitFor executeThread(
+        apiKey       = apiKey
+        ,profileId   = profileId
+        ,platform    = plat
+        ,items       = items
+        ,firstComment = firstComment
+        ,mode        = mode
+        ,scheduledFor = scheduledFor
+    )
+    
+    res.isErr:
+        icr res.err
+        echo &"❌ Failed to create thread: {res.err}"
+        return
+    
+    echo ""
+    
+    case mode
+    of pmQueue:
+        echo "✅ Thread queued for posting!"
+    of pmSchedule:
+        echo "✅ Thread scheduled!"
+    of pmDraft:
+        echo "✅ Thread draft saved!"
+    of pmPublishNow:
+        echo "✅ Thread published!"
+    
+    echo &"   ID: {res.val.post.id}"
+    echo &"   Items: {items.len}"
+    
+    if res.val.post.status.isSome:
+        echo &"   Status: {res.val.post.status.get}"

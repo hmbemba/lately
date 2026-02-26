@@ -135,6 +135,8 @@ type
 
         of linkedin:
             disableLinkPreview * : Option[bool]                    # default: false
+            organizationUrn      * : Option[string]                  # Post to company page: urn:li:organization:123456
+            documentTitle        * : Option[string]                  # Required for document/PDF posts
 
         of pinterest:
             title             * : Option[string]                   # max 100 chars
@@ -266,6 +268,8 @@ proc pLinkedIn*(
     accountId             : string
     ,firstComment         = none string
     ,disableLinkPreview   = none bool
+    ,organizationUrn      = none string
+    ,documentTitle        = none string
 ) : platform =
     platform(
         platform            : "linkedin"
@@ -274,6 +278,8 @@ proc pLinkedIn*(
             kind              : linkedin
             ,firstComment     : firstComment
             ,disableLinkPreview : disableLinkPreview
+            ,organizationUrn  : organizationUrn
+            ,documentTitle    : documentTitle
         )
     )
 
